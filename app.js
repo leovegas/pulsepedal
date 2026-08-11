@@ -60,6 +60,10 @@ const connectBtn = document.getElementById('connectBtn');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const resetBtn = document.getElementById('resetBtn');
+const hrChartEl = document.getElementById('hrChart');
+const speedChartEl = document.getElementById('speedChart');
+const hrRangeEl = document.getElementById('hrRange');
+const speedRangeEl = document.getElementById('speedRange');
 
 function setStatus(text, kind) {
   statusEl.textContent = text;
@@ -134,22 +138,29 @@ connectBtn.addEventListener('click', () => {
   }
 });
 
-function hrZoneLabel(hr) {
-  if (!profile || !hr) return '';
+const HR_ZONES = [
+  { max: 0.5, label: 'Resting', className: 'zone-resting' },
+  { max: 0.6, label: 'Zone 1 · Warm up', className: 'zone-1' },
+  { max: 0.7, label: 'Zone 2 · Easy', className: 'zone-2' },
+  { max: 0.8, label: 'Zone 3 · Moderate', className: 'zone-3' },
+  { max: 0.9, label: 'Zone 4 · Hard', className: 'zone-4' },
+  { max: Infinity, label: 'Zone 5 · Max', className: 'zone-5' },
+];
+
+function hrZoneInfo(hr) {
+  if (!profile || !hr) return null;
   const maxHr = 220 - profile.age;
   const pct = hr / maxHr;
-  if (pct < 0.5) return 'Resting';
-  if (pct < 0.6) return 'Zone 1 · Warm up';
-  if (pct < 0.7) return 'Zone 2 · Easy';
-  if (pct < 0.8) return 'Zone 3 · Moderate';
-  if (pct < 0.9) return 'Zone 4 · Hard';
-  return 'Zone 5 · Max';
+  return HR_ZONES.find((z) => pct < z.max);
 }
 
 let beatTimeout = null;
 function renderHr() {
   hrValueEl.textContent = currentHr != null ? currentHr : '--';
-  hrZoneEl.textContent = currentHr != null ? hrZoneLabel(currentHr) : '';
+  const zone = hrZoneInfo(currentHr);
+  hrZoneEl.textContent = zone ? zone.label : '';
+  hrTileEl.classList.remove(...HR_ZONES.map((z) => z.className));
+  if (zone) hrTileEl.classList.add(zone.className);
   if (currentHr != null) {
     hrTileEl.classList.add('beat');
     clearTimeout(beatTimeout);
@@ -218,6 +229,95 @@ function stopGps() {
   speedValueEl.textContent = '0.0';
 }
 
+// ---------- Keep screen awake while riding ----------
+
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch {
+    wakeLock = null;
+  }
+}
+
+async function releaseWakeLock() {
+  if (wakeLock) {
+    await wakeLock.release();
+    wakeLock = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (running && document.visibilityState === 'visible') requestWakeLock();
+});
+
+// ---------- Live charts ----------
+
+let hrHistory = [];
+let speedHistory = [];
+const MAX_CHART_POINTS = 1800; // 30 min at 1 point/sec
+
+function drawLineChart(canvas, values, color, min, max) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const points = values.filter((v) => v != null);
+  if (points.length < 2) return;
+
+  const pad = 4;
+  const span = max - min || 1;
+  const xStep = (w - pad * 2) / (values.length - 1);
+
+  ctx.beginPath();
+  let started = false;
+  values.forEach((v, i) => {
+    const x = pad + i * xStep;
+    if (v == null) { started = false; return; }
+    const y = pad + (h - pad * 2) * (1 - (v - min) / span);
+    if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+  });
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+function drawCharts() {
+  const hrValues = hrHistory.map((p) => p.v);
+  const speedValues = speedHistory.map((p) => p.v);
+
+  const presentHr = hrValues.filter((v) => v != null);
+  const hrMin = presentHr.length ? Math.min(50, Math.min(...presentHr) - 5) : 60;
+  const hrMax = presentHr.length ? Math.max(190, Math.max(...presentHr) + 5) : 200;
+  drawLineChart(hrChartEl, hrValues, '#ff5a5f', hrMin, hrMax);
+  hrRangeEl.textContent = presentHr.length
+    ? `${Math.min(...presentHr)}–${Math.max(...presentHr)} bpm`
+    : '';
+
+  const presentSpeed = speedValues.filter((v) => v != null);
+  const speedMax = presentSpeed.length ? Math.max(20, Math.max(...presentSpeed) * 1.15) : 20;
+  drawLineChart(speedChartEl, speedValues, '#4f9cf9', 0, speedMax);
+  speedRangeEl.textContent = presentSpeed.length
+    ? `0–${speedMax.toFixed(0)} km/h`
+    : '';
+}
+
+function resetCharts() {
+  hrHistory = [];
+  speedHistory = [];
+  drawCharts();
+}
+
 // ---------- Session: timer + calories ----------
 
 let running = false;
@@ -251,6 +351,12 @@ function tick() {
     calories += keytelCaloriesPerMin(currentHr) / 60;
     calValueEl.textContent = Math.round(calories);
   }
+
+  hrHistory.push({ v: currentHr });
+  speedHistory.push({ v: currentSpeedKmh });
+  if (hrHistory.length > MAX_CHART_POINTS) hrHistory.shift();
+  if (speedHistory.length > MAX_CHART_POINTS) speedHistory.shift();
+  drawCharts();
 }
 
 startBtn.addEventListener('click', () => {
@@ -260,6 +366,7 @@ startBtn.addEventListener('click', () => {
   }
   running = true;
   startGps();
+  requestWakeLock();
   tickInterval = setInterval(tick, 1000);
   startBtn.disabled = true;
   stopBtn.disabled = false;
@@ -270,6 +377,7 @@ startBtn.addEventListener('click', () => {
 stopBtn.addEventListener('click', () => {
   running = false;
   stopGps();
+  releaseWakeLock();
   clearInterval(tickInterval);
   startBtn.disabled = false;
   stopBtn.disabled = true;
@@ -286,6 +394,7 @@ resetBtn.addEventListener('click', () => {
   calValueEl.textContent = '0';
   distValueEl.textContent = '0.00';
   speedValueEl.textContent = '0.0';
+  resetCharts();
 });
 
 // register service worker for offline/installable use, if available

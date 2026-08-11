@@ -13,7 +13,9 @@ A tiny, no-backend web app that turns your phone into a bike computer: connect a
 - **Heart rate** — live BPM from any BLE strap that implements the standard [GATT Heart Rate service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/) (most generic HR straps, including MooFit's).
 - **Speed & distance** — from the phone's GPS, with basic filtering for noisy/low-accuracy fixes.
 - **Calories** — estimated per second from heart rate using the [Keytel et al. (2005)](https://pubmed.ncbi.nlm.nih.gov/15966347/) regression formula, personalized to your weight/age/sex.
-- **Heart rate zones** — simple % of estimated max HR (`220 − age`).
+- **Heart rate zones** — simple % of estimated max HR (`220 − age`), color-coded on the HR tile (blue → green → yellow → orange → red as you climb zones).
+- **Live charts** — rolling heart rate and speed graphs for the current ride, drawn on canvas, no chart library.
+- **Screen stays awake** — uses the Screen Wake Lock API while a ride is in progress, so the display doesn't dim or lock mid-ride.
 - Installable as a home-screen app (PWA manifest + service worker), works offline once loaded.
 - **No account, no server, no analytics.** Your profile (weight/age/sex) is saved only in your browser's `localStorage`. Ride data isn't stored or sent anywhere — refreshing the page clears it.
 

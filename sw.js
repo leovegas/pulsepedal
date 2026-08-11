@@ -1,4 +1,4 @@
-const CACHE = 'ridestats-v1';
+const CACHE = 'ridestats-v2';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.json'];
 
 self.addEventListener('install', (event) => {

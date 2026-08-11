@@ -90,26 +90,63 @@ main {
 .hr-tile {
   text-align: center;
   padding: 24px 16px;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, background 0.3s ease;
+  --zone-color: var(--muted);
 }
 
 .hr-tile .tile-value { font-size: 56px; }
+.hr-tile .tile-value #hrValue { color: var(--zone-color); transition: color 0.3s ease; }
 
 .hr-tile.beat {
-  box-shadow: 0 0 0 3px var(--accent) inset;
+  box-shadow: 0 0 0 3px var(--zone-color) inset;
 }
+
+.hr-tile.zone-resting { --zone-color: #8b93a1; }
+.hr-tile.zone-1 { --zone-color: #4f9cf9; }
+.hr-tile.zone-2 { --zone-color: #3fb950; }
+.hr-tile.zone-3 { --zone-color: #e3b341; }
+.hr-tile.zone-4 { --zone-color: #f0883e; }
+.hr-tile.zone-5 { --zone-color: #ff5a5f; }
 
 .hr-zone {
   margin-top: 6px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--zone-color);
   min-height: 18px;
+  font-weight: 600;
 }
 
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.charts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chart-tile {
+  background: var(--tile);
+  border: 1px solid var(--tile-border);
+  border-radius: 16px;
+  padding: 12px 16px 8px;
+}
+
+.chart-range {
+  float: right;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--muted);
+}
+
+.chart-tile canvas {
+  display: block;
+  width: 100%;
+  height: 70px;
+  margin-top: 6px;
 }
 
 .status {
