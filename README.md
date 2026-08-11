@@ -1,14 +1,14 @@
-# Ride Stats
+# PulsePedal
 
 A tiny, no-backend web app that turns your phone into a bike computer: connect a Bluetooth LE heart rate strap, track speed and distance with GPS, and get a live calorie estimate — all in the browser, nothing installed, nothing uploaded.
 
-**Live app:** https://leovegas.github.io/ride-stats/
+**Live app:** https://leovegas.github.io/pulsepedal/
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![No backend](https://img.shields.io/badge/backend-none-brightgreen.svg)
 ![Web Bluetooth](https://img.shields.io/badge/uses-Web%20Bluetooth-orange.svg)
 
-<img src="docs/screenshot.jpg" alt="Ride Stats running mid-ride: 71 bpm resting heart rate, live HR and speed charts" width="320">
+<img src="docs/screenshot.jpg" alt="PulsePedal running mid-ride: 71 bpm resting heart rate, live HR and speed charts" width="320">
 
 ## Features
 
@@ -46,8 +46,8 @@ The page must also be loaded over `https://` (or `http://localhost` during devel
 No build step or dependencies — it's plain HTML/CSS/JS.
 
 ```bash
-git clone https://github.com/leovegas/ride-stats.git
-cd ride-stats
+git clone https://github.com/leovegas/pulsepedal.git
+cd pulsepedal
 python3 -m http.server 8787
 ```
 

@@ -1,6 +1,6 @@
 {
-  "name": "Ride Stats",
-  "short_name": "Ride Stats",
+  "name": "PulsePedal",
+  "short_name": "PulsePedal",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f1115",
