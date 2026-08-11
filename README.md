@@ -8,6 +8,8 @@ A tiny, no-backend web app that turns your phone into a bike computer: connect a
 ![No backend](https://img.shields.io/badge/backend-none-brightgreen.svg)
 ![Web Bluetooth](https://img.shields.io/badge/uses-Web%20Bluetooth-orange.svg)
 
+<img src="docs/screenshot.jpg" alt="Ride Stats running mid-ride: 71 bpm resting heart rate, live HR and speed charts" width="320">
+
 ## Features
 
 - **Heart rate** — live BPM from any BLE strap that implements the standard [GATT Heart Rate service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/) (most generic HR straps, including MooFit's).
