@@ -1,0 +1,9 @@
+{
+  "name": "Ride Stats",
+  "short_name": "Ride Stats",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "orientation": "portrait"
+}

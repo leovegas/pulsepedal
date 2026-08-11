@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ride Stats</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1115">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Ride Stats</h1>
+    <button id="settingsBtn" aria-label="Settings">⚙️</button>
+  </header>
+
+  <main>
+    <section class="tile hr-tile" id="hrTile">
+      <div class="tile-label">Heart Rate</div>
+      <div class="tile-value"><span id="hrValue">--</span><span class="unit">bpm</span></div>
+      <div class="hr-zone" id="hrZone"></div>
+    </section>
+
+    <section class="grid">
+      <div class="tile">
+        <div class="tile-label">Speed</div>
+        <div class="tile-value"><span id="speedValue">0.0</span><span class="unit">km/h</span></div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">Distance</div>
+        <div class="tile-value"><span id="distValue">0.00</span><span class="unit">km</span></div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">Calories</div>
+        <div class="tile-value"><span id="calValue">0</span><span class="unit">kcal</span></div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">Time</div>
+        <div class="tile-value"><span id="timeValue">00:00</span></div>
+      </div>
+    </section>
+
+    <div class="status" id="status">Not connected</div>
+
+    <div class="controls">
+      <button id="connectBtn" class="btn primary">Connect Sensor</button>
+      <button id="startBtn" class="btn" disabled>Start Ride</button>
+      <button id="stopBtn" class="btn" disabled>Stop</button>
+      <button id="resetBtn" class="btn ghost">Reset</button>
+    </div>
+  </main>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Your Profile</h2>
+      <p class="hint">Used to estimate calories from heart rate (Keytel formula).</p>
+      <label>Weight (kg)
+        <input type="number" id="weightInput" min="20" max="250" step="0.5" required>
+      </label>
+      <label>Age (years)
+        <input type="number" id="ageInput" min="5" max="120" step="1" required>
+      </label>
+      <label>Sex
+        <select id="sexInput">
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </label>
+      <div class="dialog-actions">
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
