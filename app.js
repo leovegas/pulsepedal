@@ -23,25 +23,58 @@ const settingsForm = document.getElementById('settingsForm');
 const weightInput = document.getElementById('weightInput');
 const ageInput = document.getElementById('ageInput');
 const sexInput = document.getElementById('sexInput');
+const hrAlertEnabledInput = document.getElementById('hrAlertEnabledInput');
+const hrMinInput = document.getElementById('hrMinInput');
+const hrMaxInput = document.getElementById('hrMaxInput');
+const hrAlertRangeEl = document.getElementById('hrAlertRange');
+const testAlertBtn = document.getElementById('testAlertBtn');
+
+const DEFAULT_HR_MIN = 110;
+const DEFAULT_HR_MAX = 165;
+
+function updateAlertFieldsState() {
+  const enabled = hrAlertEnabledInput.checked;
+  hrMinInput.disabled = !enabled;
+  hrMaxInput.disabled = !enabled;
+  hrAlertRangeEl.classList.toggle('disabled', !enabled);
+}
 
 function openSettings() {
   if (profile) {
     weightInput.value = profile.weight;
     ageInput.value = profile.age;
     sexInput.value = profile.sex;
+    hrAlertEnabledInput.checked = !!profile.hrAlertsEnabled;
+    hrMinInput.value = profile.hrMin != null ? profile.hrMin : DEFAULT_HR_MIN;
+    hrMaxInput.value = profile.hrMax != null ? profile.hrMax : DEFAULT_HR_MAX;
+  } else {
+    hrAlertEnabledInput.checked = false;
+    hrMinInput.value = DEFAULT_HR_MIN;
+    hrMaxInput.value = DEFAULT_HR_MAX;
   }
+  updateAlertFieldsState();
   settingsDialog.showModal();
 }
 
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
+hrAlertEnabledInput.addEventListener('change', updateAlertFieldsState);
+testAlertBtn.addEventListener('click', () => {
+  unlockAudio();
+  playAlertSound('low');
+  setTimeout(() => playAlertSound('high'), 500);
+});
 
 settingsForm.addEventListener('submit', () => {
   profile = {
     weight: parseFloat(weightInput.value),
     age: parseInt(ageInput.value, 10),
     sex: sexInput.value,
+    hrAlertsEnabled: hrAlertEnabledInput.checked,
+    hrMin: parseInt(hrMinInput.value, 10),
+    hrMax: parseInt(hrMaxInput.value, 10),
   };
   saveProfile(profile);
+  lastAlertKind = null;
 });
 
 if (!profile) openSettings();
@@ -64,6 +97,21 @@ const hrChartEl = document.getElementById('hrChart');
 const speedChartEl = document.getElementById('speedChart');
 const hrRangeEl = document.getElementById('hrRange');
 const speedRangeEl = document.getElementById('speedRange');
+
+const historyBtn = document.getElementById('historyBtn');
+const summaryDialog = document.getElementById('summaryDialog');
+const summaryTitleEl = document.getElementById('summaryTitle');
+const summarySubtitleEl = document.getElementById('summarySubtitle');
+const summaryGridEl = document.getElementById('summaryGrid');
+const summaryHrChartEl = document.getElementById('summaryHrChart');
+const summaryZoneBarEl = document.getElementById('summaryZoneBar');
+const summaryZoneLegendEl = document.getElementById('summaryZoneLegend');
+const summaryDeleteBtn = document.getElementById('summaryDeleteBtn');
+const summaryCloseBtn = document.getElementById('summaryCloseBtn');
+const historyDialog = document.getElementById('historyDialog');
+const historyTotalsEl = document.getElementById('historyTotals');
+const historyListEl = document.getElementById('historyList');
+const historyCloseBtn = document.getElementById('historyCloseBtn');
 
 function setStatus(text, kind) {
   statusEl.textContent = text;
@@ -166,6 +214,77 @@ function renderHr() {
     clearTimeout(beatTimeout);
     beatTimeout = setTimeout(() => hrTileEl.classList.remove('beat'), 200);
   }
+  checkHrAlert(currentHr);
+}
+
+// ---------- HR threshold sound alerts ----------
+// Tiny beeps so you can stay heads-up on the bike: a low chirp when HR
+// drops below the min, a double high chirp when it goes above the max.
+
+let audioCtx = null;
+
+function unlockAudio() {
+  if (!audioCtx) {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return null;
+    audioCtx = new AudioCtor();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playBeep(freq, durationMs, delayMs = 0) {
+  const ctx = audioCtx;
+  if (!ctx) return;
+  const start = ctx.currentTime + delayMs / 1000;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(0.18, start + 0.008);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + durationMs / 1000);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + durationMs / 1000 + 0.02);
+}
+
+function playAlertSound(kind) {
+  if (!audioCtx && !unlockAudio()) return;
+  if (kind === 'low') {
+    playBeep(330, 110); // single low chirp: HR below range
+  } else if (kind === 'high') {
+    playBeep(1046, 90); // double high chirp: HR above range
+    playBeep(1046, 90, 130);
+  }
+}
+
+let lastAlertKind = null;
+let lastAlertTime = 0;
+const ALERT_REPEAT_MS = 8000;
+
+function checkHrAlert(hr) {
+  if (!running || !profile || !profile.hrAlertsEnabled || hr == null) {
+    lastAlertKind = null;
+    return;
+  }
+  const { hrMin, hrMax } = profile;
+  let kind = null;
+  if (typeof hrMin === 'number' && !Number.isNaN(hrMin) && hr < hrMin) {
+    kind = 'low';
+  } else if (typeof hrMax === 'number' && !Number.isNaN(hrMax) && hr > hrMax) {
+    kind = 'high';
+  }
+
+  if (kind) {
+    const now = Date.now();
+    if (kind !== lastAlertKind || now - lastAlertTime >= ALERT_REPEAT_MS) {
+      playAlertSound(kind);
+      lastAlertTime = now;
+    }
+  }
+  lastAlertKind = kind;
 }
 
 // ---------- Speed & distance via GPS ----------
@@ -325,6 +444,12 @@ let elapsedSec = 0;
 let calories = 0;
 let tickInterval = null;
 
+// full-resolution samples for the ride currently in progress, used to
+// build the post-ride summary (independent of the capped live chart data)
+let rideHrSamples = [];
+let rideSpeedSamples = [];
+let zoneSeconds = {};
+
 function keytelCaloriesPerMin(hr) {
   if (!profile || !hr) return 0;
   const { weight, age, sex } = profile;
@@ -357,6 +482,11 @@ function tick() {
   if (hrHistory.length > MAX_CHART_POINTS) hrHistory.shift();
   if (speedHistory.length > MAX_CHART_POINTS) speedHistory.shift();
   drawCharts();
+
+  rideHrSamples.push(currentHr);
+  rideSpeedSamples.push(currentSpeedKmh);
+  const zone = hrZoneInfo(currentHr);
+  if (zone) zoneSeconds[zone.className] = (zoneSeconds[zone.className] || 0) + 1;
 }
 
 startBtn.addEventListener('click', () => {
@@ -365,6 +495,11 @@ startBtn.addEventListener('click', () => {
     return;
   }
   running = true;
+  lastAlertKind = null;
+  unlockAudio();
+  rideHrSamples = [];
+  rideSpeedSamples = [];
+  zoneSeconds = {};
   startGps();
   requestWakeLock();
   tickInterval = setInterval(tick, 1000);
@@ -376,13 +511,22 @@ startBtn.addEventListener('click', () => {
 
 stopBtn.addEventListener('click', () => {
   running = false;
+  lastAlertKind = null;
   stopGps();
   releaseWakeLock();
   clearInterval(tickInterval);
   startBtn.disabled = false;
   stopBtn.disabled = true;
   resetBtn.disabled = false;
-  setStatus('Ride stopped');
+
+  if (elapsedSec >= MIN_RIDE_SEC) {
+    const ride = buildRideSummary();
+    addRideToHistory(ride);
+    setStatus('Ride saved', 'connected');
+    renderRideSummary(ride);
+  } else {
+    setStatus('Ride stopped');
+  }
 });
 
 resetBtn.addEventListener('click', () => {
@@ -395,6 +539,208 @@ resetBtn.addEventListener('click', () => {
   distValueEl.textContent = '0.00';
   speedValueEl.textContent = '0.0';
   resetCharts();
+});
+
+// ---------- Ride history & fancy post-ride summary ----------
+
+const HISTORY_KEY = 'ridestats.history';
+const MAX_HISTORY_RIDES = 200;
+const SUMMARY_SAMPLE_POINTS = 120;
+const MIN_RIDE_SEC = 10; // ignore accidental start/stop taps
+
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistoryList(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function downsample(values, n) {
+  if (values.length <= n) return values.slice();
+  const out = [];
+  const step = values.length / n;
+  for (let i = 0; i < n; i++) out.push(values[Math.floor(i * step)]);
+  return out;
+}
+
+function buildRideSummary() {
+  const hrPresent = rideHrSamples.filter((v) => v != null);
+  const avgHr = hrPresent.length
+    ? Math.round(hrPresent.reduce((a, b) => a + b, 0) / hrPresent.length)
+    : null;
+  const maxHr = hrPresent.length ? Math.max(...hrPresent) : null;
+  const minHr = hrPresent.length ? Math.min(...hrPresent) : null;
+  const maxSpeed = rideSpeedSamples.length ? Math.max(...rideSpeedSamples) : 0;
+  const avgSpeed = elapsedSec > 0 ? distanceKm / (elapsedSec / 3600) : 0;
+
+  return {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    date: new Date().toISOString(),
+    durationSec: elapsedSec,
+    distanceKm,
+    calories: Math.round(calories),
+    avgSpeed,
+    maxSpeed,
+    avgHr,
+    maxHr,
+    minHr,
+    zoneSeconds,
+    hrSamples: downsample(rideHrSamples, SUMMARY_SAMPLE_POINTS),
+  };
+}
+
+function addRideToHistory(ride) {
+  const history = loadHistory();
+  history.unshift(ride);
+  if (history.length > MAX_HISTORY_RIDES) history.length = MAX_HISTORY_RIDES;
+  saveHistoryList(history);
+  return history;
+}
+
+function deleteRide(id) {
+  saveHistoryList(loadHistory().filter((r) => r.id !== id));
+  renderHistoryList();
+}
+
+function formatDuration(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
+  const s = Math.floor(totalSec % 60).toString().padStart(2, '0');
+  return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+}
+
+function formatRideDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+    ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function dominantZone(ride) {
+  const entries = Object.entries(ride.zoneSeconds || {});
+  if (!entries.length) return null;
+  entries.sort((a, b) => b[1] - a[1]);
+  return HR_ZONES.find((z) => z.className === entries[0][0]) || null;
+}
+
+function statHtml(label, value, unit) {
+  return `<div class="summary-stat"><div class="stat-label">${label}</div>` +
+    `<div class="stat-value">${value}${unit ? `<span class="unit">${unit}</span>` : ''}</div></div>`;
+}
+
+function statMiniHtml(label, value) {
+  return `<div class="stat-mini"><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
+}
+
+function renderRideSummary(ride) {
+  summaryTitleEl.textContent = 'Ride Summary';
+  summarySubtitleEl.textContent = formatRideDate(ride.date);
+
+  summaryGridEl.innerHTML = [
+    statHtml('Duration', formatDuration(ride.durationSec)),
+    statHtml('Distance', ride.distanceKm.toFixed(2), 'km'),
+    statHtml('Avg Speed', ride.avgSpeed.toFixed(1), 'km/h'),
+    statHtml('Max Speed', ride.maxSpeed.toFixed(1), 'km/h'),
+    statHtml('Calories', ride.calories, 'kcal'),
+    statHtml('Avg HR', ride.avgHr != null ? ride.avgHr : '--', 'bpm'),
+    statHtml('Max HR', ride.maxHr != null ? ride.maxHr : '--', 'bpm'),
+    statHtml('Min HR', ride.minHr != null ? ride.minHr : '--', 'bpm'),
+  ].join('');
+
+  const totalZoneSec = Object.values(ride.zoneSeconds || {}).reduce((a, b) => a + b, 0);
+  summaryZoneBarEl.innerHTML = '';
+  summaryZoneLegendEl.innerHTML = '';
+  if (totalZoneSec > 0) {
+    HR_ZONES.forEach((z) => {
+      const sec = (ride.zoneSeconds || {})[z.className] || 0;
+      if (sec <= 0) return;
+      const pct = (sec / totalZoneSec) * 100;
+
+      const seg = document.createElement('div');
+      seg.className = 'zone-bar-seg ' + z.className;
+      seg.style.width = pct.toFixed(1) + '%';
+      summaryZoneBarEl.appendChild(seg);
+
+      const item = document.createElement('div');
+      item.className = 'zone-legend-item';
+      item.innerHTML = `<span class="zone-dot ${z.className}"></span>${z.label.split(' · ')[0]} · ${formatDuration(sec)}`;
+      summaryZoneLegendEl.appendChild(item);
+    });
+  } else {
+    summaryZoneLegendEl.innerHTML = '<div class="history-empty">No heart rate data</div>';
+  }
+
+  summaryDeleteBtn.onclick = () => {
+    deleteRide(ride.id);
+    summaryDialog.close();
+  };
+
+  summaryDialog.showModal();
+  requestAnimationFrame(() => {
+    drawLineChart(
+      summaryHrChartEl,
+      ride.hrSamples,
+      '#ff5a5f',
+      ride.minHr != null ? ride.minHr - 5 : 60,
+      ride.maxHr != null ? ride.maxHr + 5 : 200
+    );
+  });
+}
+
+function renderHistoryList() {
+  const history = loadHistory();
+  const totalDistance = history.reduce((a, r) => a + r.distanceKm, 0);
+  const totalDuration = history.reduce((a, r) => a + r.durationSec, 0);
+
+  historyTotalsEl.innerHTML = [
+    statMiniHtml('Rides', history.length),
+    statMiniHtml('Distance', totalDistance.toFixed(1) + ' km'),
+    statMiniHtml('Time', formatDuration(totalDuration)),
+  ].join('');
+
+  if (!history.length) {
+    historyListEl.innerHTML = '<div class="history-empty">No rides yet. Start riding to build your history.</div>';
+    return;
+  }
+
+  historyListEl.innerHTML = '';
+  history.forEach((ride) => {
+    const zone = dominantZone(ride);
+    const row = document.createElement('div');
+    row.className = 'history-item';
+    row.innerHTML = `
+      <div class="history-item-main">
+        <div class="history-item-date">${formatRideDate(ride.date)}</div>
+        <div class="history-item-sub">${ride.distanceKm.toFixed(2)} km · ${formatDuration(ride.durationSec)} · ${ride.calories} kcal</div>
+      </div>
+      <div class="history-item-stats">
+        ${ride.avgHr != null ? `<span class="history-item-hr ${zone ? zone.className : ''}">${ride.avgHr} bpm</span>` : ''}
+        <button type="button" class="history-item-del" aria-label="Delete ride">🗑</button>
+      </div>
+    `;
+    row.querySelector('.history-item-main').addEventListener('click', () => renderRideSummary(ride));
+    const hrBadge = row.querySelector('.history-item-hr');
+    if (hrBadge) hrBadge.addEventListener('click', () => renderRideSummary(ride));
+    row.querySelector('.history-item-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteRide(ride.id);
+    });
+    historyListEl.appendChild(row);
+  });
+}
+
+historyBtn.addEventListener('click', () => {
+  renderHistoryList();
+  historyDialog.showModal();
+});
+historyCloseBtn.addEventListener('click', () => historyDialog.close());
+summaryCloseBtn.addEventListener('click', () => summaryDialog.close());
+summaryDialog.addEventListener('close', () => {
+  if (historyDialog.open) renderHistoryList();
 });
 
 // register service worker for offline/installable use, if available

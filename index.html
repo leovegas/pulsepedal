@@ -11,7 +11,10 @@
 <body>
   <header>
     <h1>PulsePedal</h1>
-    <button id="settingsBtn" aria-label="Settings">⚙️</button>
+    <div class="header-actions">
+      <button id="historyBtn" aria-label="Ride history">📜</button>
+      <button id="settingsBtn" aria-label="Settings">⚙️</button>
+    </div>
   </header>
 
   <main>
@@ -77,10 +80,64 @@
           <option value="female">Female</option>
         </select>
       </label>
+
+      <hr class="divider">
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="hrAlertEnabledInput">
+        Sound alert when out of HR range
+      </label>
+      <p class="hint">Plays a tiny beep so you don't have to look at the screen while riding.</p>
+      <div class="hr-alert-range" id="hrAlertRange">
+        <label>Min (bpm)
+          <input type="number" id="hrMinInput" min="30" max="250" step="1">
+        </label>
+        <label>Max (bpm)
+          <input type="number" id="hrMaxInput" min="30" max="250" step="1">
+        </label>
+        <button type="button" class="btn ghost" id="testAlertBtn">Test sound</button>
+      </div>
+
       <div class="dialog-actions">
         <button type="submit" class="btn primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="summaryDialog" class="summary-dialog">
+    <div class="summary-content">
+      <h2 id="summaryTitle">Ride Summary</h2>
+      <p class="hint" id="summarySubtitle"></p>
+
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <div class="summary-section">
+        <div class="tile-label">Heart Rate</div>
+        <canvas id="summaryHrChart" height="60"></canvas>
+      </div>
+
+      <div class="summary-section">
+        <div class="tile-label">Time in Zone</div>
+        <div class="zone-bar" id="summaryZoneBar"></div>
+        <div class="zone-legend" id="summaryZoneLegend"></div>
+      </div>
+
+      <div class="dialog-actions summary-actions">
+        <button type="button" class="btn ghost danger" id="summaryDeleteBtn">Delete</button>
+        <button type="button" class="btn primary" id="summaryCloseBtn">Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="historyDialog" class="history-dialog">
+    <div class="history-content">
+      <div class="history-header">
+        <h2>Ride History</h2>
+        <button type="button" class="btn ghost" id="historyCloseBtn">Close</button>
+      </div>
+      <div class="history-summary" id="historyTotals"></div>
+      <div class="history-list" id="historyList"></div>
+    </div>
   </dialog>
 
   <script src="app.js"></script>
