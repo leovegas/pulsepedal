@@ -41,9 +41,13 @@
         <div class="tile-label">Time</div>
         <div class="tile-value"><span id="timeValue">00:00</span></div>
       </div>
-      <div class="tile full">
+      <div class="tile">
         <div class="tile-label">Straight-Line Distance</div>
         <div class="tile-value"><span id="straightDistValue">0.00</span><span class="unit">km</span></div>
+      </div>
+      <div class="tile hidden" id="elevGainTile">
+        <div class="tile-label">Elevation Gain</div>
+        <div class="tile-value"><span id="elevGainValue">0</span><span class="unit">m</span></div>
       </div>
     </section>
 
@@ -55,6 +59,11 @@
       <div class="chart-tile">
         <div class="tile-label">Speed <span class="chart-range" id="speedRange"></span></div>
         <canvas id="speedChart" height="70"></canvas>
+      </div>
+      <div class="chart-tile">
+        <div class="tile-label">Time in Zone</div>
+        <div class="zone-bar" id="liveZoneBar"></div>
+        <div class="zone-legend" id="liveZoneLegend"></div>
       </div>
     </section>
 

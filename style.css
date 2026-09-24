@@ -36,6 +36,10 @@ header {
   margin-bottom: 16px;
 }
 
+body.riding header {
+  display: none;
+}
+
 h1 {
   font-size: 20px;
   margin: 0;
@@ -68,6 +72,10 @@ main {
   border: 1px solid var(--tile-border);
   border-radius: 16px;
   padding: 16px;
+}
+
+.hidden {
+  display: none;
 }
 
 .tile-label {
@@ -128,10 +136,6 @@ main {
   gap: 12px;
 }
 
-.grid .full {
-  grid-column: 1 / -1;
-}
-
 .charts {
   display: flex;
   flex-direction: column;
@@ -143,6 +147,10 @@ main {
   border: 1px solid var(--tile-border);
   border-radius: 16px;
   padding: 12px 16px 8px;
+}
+
+.chart-tile .zone-bar {
+  margin-top: 6px;
 }
 
 .chart-range {

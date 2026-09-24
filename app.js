@@ -87,6 +87,8 @@ const hrZoneEl = document.getElementById('hrZone');
 const speedValueEl = document.getElementById('speedValue');
 const distValueEl = document.getElementById('distValue');
 const straightDistValueEl = document.getElementById('straightDistValue');
+const elevGainTileEl = document.getElementById('elevGainTile');
+const elevGainValueEl = document.getElementById('elevGainValue');
 const calValueEl = document.getElementById('calValue');
 const timeValueEl = document.getElementById('timeValue');
 const statusEl = document.getElementById('status');
@@ -99,6 +101,8 @@ const hrChartEl = document.getElementById('hrChart');
 const speedChartEl = document.getElementById('speedChart');
 const hrRangeEl = document.getElementById('hrRange');
 const speedRangeEl = document.getElementById('speedRange');
+const liveZoneBarEl = document.getElementById('liveZoneBar');
+const liveZoneLegendEl = document.getElementById('liveZoneLegend');
 
 const historyBtn = document.getElementById('historyBtn');
 const summaryDialog = document.getElementById('summaryDialog');
@@ -297,6 +301,11 @@ let startPos = null;
 let distanceKm = 0;
 let straightLineKm = 0;
 let currentSpeedKmh = 0;
+let lastAltitude = null;
+let elevationGainM = 0;
+let hasAltitudeData = false;
+const MIN_ELEVATION_DELTA_M = 0.5; // noise-threshold filter, mirrors the dKm < 0.3 distance-jump filter
+const MAX_ALTITUDE_ACCURACY_M = 25; // ignore fixes with poor altitude accuracy
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -315,7 +324,7 @@ function startGps() {
   }
   watchId = navigator.geolocation.watchPosition(
     (pos) => {
-      const { latitude, longitude, speed, accuracy } = pos.coords;
+      const { latitude, longitude, speed, accuracy, altitude, altitudeAccuracy } = pos.coords;
       if (accuracy && accuracy > 50) return; // ignore very poor fixes
 
       if (typeof speed === 'number' && speed !== null && !Number.isNaN(speed)) {
@@ -330,12 +339,27 @@ function startGps() {
 
       if (lastPos) {
         const dKm = haversineKm(lastPos.lat, lastPos.lon, latitude, longitude);
-        if (dKm < 0.3) distanceKm += dKm; // filter GPS jumps
+        if (dKm < 0.3 && !autoPaused) distanceKm += dKm; // filter GPS jumps; freeze odometer while auto-paused
       }
       lastPos = { lat: latitude, lon: longitude, timestamp: pos.timestamp };
 
       if (!startPos) startPos = { lat: latitude, lon: longitude };
       straightLineKm = haversineKm(startPos.lat, startPos.lon, latitude, longitude);
+
+      if (
+        typeof altitude === 'number' && !Number.isNaN(altitude) &&
+        !(typeof altitudeAccuracy === 'number' && altitudeAccuracy > MAX_ALTITUDE_ACCURACY_M)
+      ) {
+        const firstFix = !hasAltitudeData;
+        hasAltitudeData = true;
+        if (lastAltitude != null) {
+          const dAlt = altitude - lastAltitude;
+          if (dAlt > MIN_ELEVATION_DELTA_M) elevationGainM += dAlt;
+        }
+        lastAltitude = altitude;
+        elevGainValueEl.textContent = Math.round(elevationGainM);
+        if (firstFix) elevGainTileEl.classList.remove('hidden');
+      }
 
       speedValueEl.textContent = currentSpeedKmh.toFixed(1);
       distValueEl.textContent = distanceKm.toFixed(2);
@@ -449,9 +473,15 @@ function resetCharts() {
 
 let running = false;
 let paused = false;
+let autoPaused = false;
+let lowSpeedTicks = 0;
 let elapsedSec = 0;
 let calories = 0;
 let tickInterval = null;
+
+const AUTO_PAUSE_SPEED_KMH = 2;
+const AUTO_RESUME_SPEED_KMH = 4; // hysteresis gap so it doesn't flap at one threshold
+const AUTO_PAUSE_TICKS = 3; // seconds of sustained low speed before pausing
 
 // full-resolution samples for the ride currently in progress, used to
 // build the post-ride summary (independent of the capped live chart data)
@@ -478,6 +508,15 @@ function formatTime(totalSec) {
 }
 
 function tick() {
+  if (autoPaused) {
+    if (currentSpeedKmh > AUTO_RESUME_SPEED_KMH) {
+      autoPaused = false;
+      lowSpeedTicks = 0;
+      setStatus('Ride in progress', 'connected');
+    }
+    return; // skip all per-tick accumulation while auto-paused
+  }
+
   elapsedSec += 1;
   timeValueEl.textContent = formatTime(elapsedSec);
 
@@ -496,6 +535,17 @@ function tick() {
   rideSpeedSamples.push(currentSpeedKmh);
   const zone = hrZoneInfo(currentHr);
   if (zone) zoneSeconds[zone.className] = (zoneSeconds[zone.className] || 0) + 1;
+  renderZoneBar(zoneSeconds, liveZoneBarEl, liveZoneLegendEl);
+
+  if (currentSpeedKmh < AUTO_PAUSE_SPEED_KMH) {
+    lowSpeedTicks += 1;
+    if (lowSpeedTicks >= AUTO_PAUSE_TICKS) {
+      autoPaused = true;
+      setStatus('Auto-paused (stopped)');
+    }
+  } else {
+    lowSpeedTicks = 0;
+  }
 }
 
 startBtn.addEventListener('click', () => {
@@ -505,14 +555,22 @@ startBtn.addEventListener('click', () => {
   }
   running = true;
   paused = false;
+  autoPaused = false;
+  lowSpeedTicks = 0;
   lastAlertKind = null;
+  document.body.classList.add('riding');
   unlockAudio();
   rideHrSamples = [];
   rideSpeedSamples = [];
   zoneSeconds = {};
   startPos = null;
   straightLineKm = 0;
+  lastAltitude = null;
+  elevationGainM = 0;
+  hasAltitudeData = false;
   straightDistValueEl.textContent = '0.00';
+  elevGainTileEl.classList.add('hidden');
+  renderZoneBar({}, liveZoneBarEl, liveZoneLegendEl);
   startGps();
   requestWakeLock();
   tickInterval = setInterval(tick, 1000);
@@ -528,6 +586,8 @@ pauseBtn.addEventListener('click', () => {
   if (!running) return;
   paused = !paused;
   lastAlertKind = null;
+  autoPaused = false;
+  lowSpeedTicks = 0;
   if (paused) {
     stopGps();
     clearInterval(tickInterval);
@@ -545,7 +605,10 @@ pauseBtn.addEventListener('click', () => {
 stopBtn.addEventListener('click', () => {
   running = false;
   paused = false;
+  autoPaused = false;
+  lowSpeedTicks = 0;
   lastAlertKind = null;
+  document.body.classList.remove('riding');
   stopGps();
   releaseWakeLock();
   clearInterval(tickInterval);
@@ -572,11 +635,16 @@ resetBtn.addEventListener('click', () => {
   currentSpeedKmh = 0;
   startPos = null;
   straightLineKm = 0;
+  lastAltitude = null;
+  elevationGainM = 0;
+  hasAltitudeData = false;
   timeValueEl.textContent = '00:00';
   calValueEl.textContent = '0';
   distValueEl.textContent = '0.00';
   speedValueEl.textContent = '0.0';
   straightDistValueEl.textContent = '0.00';
+  elevGainTileEl.classList.add('hidden');
+  renderZoneBar({}, liveZoneBarEl, liveZoneLegendEl);
   resetCharts();
 });
 
@@ -629,6 +697,7 @@ function buildRideSummary() {
     maxHr,
     minHr,
     zoneSeconds,
+    elevationGainM: hasAltitudeData ? Math.round(elevationGainM) : null,
     hrSamples: downsample(rideHrSamples, SUMMARY_SAMPLE_POINTS),
   };
 }
@@ -675,6 +744,31 @@ function statMiniHtml(label, value) {
   return `<div class="stat-mini"><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
 }
 
+function renderZoneBar(zoneSecondsObj, barEl, legendEl) {
+  const totalZoneSec = Object.values(zoneSecondsObj || {}).reduce((a, b) => a + b, 0);
+  barEl.innerHTML = '';
+  legendEl.innerHTML = '';
+  if (totalZoneSec > 0) {
+    HR_ZONES.forEach((z) => {
+      const sec = (zoneSecondsObj || {})[z.className] || 0;
+      if (sec <= 0) return;
+      const pct = (sec / totalZoneSec) * 100;
+
+      const seg = document.createElement('div');
+      seg.className = 'zone-bar-seg ' + z.className;
+      seg.style.width = pct.toFixed(1) + '%';
+      barEl.appendChild(seg);
+
+      const item = document.createElement('div');
+      item.className = 'zone-legend-item';
+      item.innerHTML = `<span class="zone-dot ${z.className}"></span>${z.label.split(' · ')[0]} · ${formatDuration(sec)}`;
+      legendEl.appendChild(item);
+    });
+  } else {
+    legendEl.innerHTML = '<div class="history-empty">No heart rate data</div>';
+  }
+}
+
 function renderRideSummary(ride) {
   summaryTitleEl.textContent = 'Ride Summary';
   summarySubtitleEl.textContent = formatRideDate(ride.date);
@@ -688,30 +782,10 @@ function renderRideSummary(ride) {
     statHtml('Avg HR', ride.avgHr != null ? ride.avgHr : '--', 'bpm'),
     statHtml('Max HR', ride.maxHr != null ? ride.maxHr : '--', 'bpm'),
     statHtml('Min HR', ride.minHr != null ? ride.minHr : '--', 'bpm'),
+    ...(ride.elevationGainM != null ? [statHtml('Elevation Gain', ride.elevationGainM, 'm')] : []),
   ].join('');
 
-  const totalZoneSec = Object.values(ride.zoneSeconds || {}).reduce((a, b) => a + b, 0);
-  summaryZoneBarEl.innerHTML = '';
-  summaryZoneLegendEl.innerHTML = '';
-  if (totalZoneSec > 0) {
-    HR_ZONES.forEach((z) => {
-      const sec = (ride.zoneSeconds || {})[z.className] || 0;
-      if (sec <= 0) return;
-      const pct = (sec / totalZoneSec) * 100;
-
-      const seg = document.createElement('div');
-      seg.className = 'zone-bar-seg ' + z.className;
-      seg.style.width = pct.toFixed(1) + '%';
-      summaryZoneBarEl.appendChild(seg);
-
-      const item = document.createElement('div');
-      item.className = 'zone-legend-item';
-      item.innerHTML = `<span class="zone-dot ${z.className}"></span>${z.label.split(' · ')[0]} · ${formatDuration(sec)}`;
-      summaryZoneLegendEl.appendChild(item);
-    });
-  } else {
-    summaryZoneLegendEl.innerHTML = '<div class="history-empty">No heart rate data</div>';
-  }
+  renderZoneBar(ride.zoneSeconds, summaryZoneBarEl, summaryZoneLegendEl);
 
   summaryDeleteBtn.onclick = () => {
     deleteRide(ride.id);
