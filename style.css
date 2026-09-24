@@ -92,8 +92,6 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.grid .tile-value { font-size: 26px; }
-
 .unit {
   font-size: 15px;
   font-weight: 400;
@@ -130,10 +128,34 @@ main {
   font-weight: 600;
 }
 
+.hr-tile .zone-bar {
+  margin-top: 12px;
+}
+
+.hr-tile .zone-legend {
+  justify-content: center;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.grid .tile {
+  padding: 10px 12px;
+}
+
+.grid .tile-label {
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.grid .tile-value { font-size: 20px; }
+
+.grid .unit {
+  font-size: 12px;
+  margin-left: 4px;
 }
 
 .charts {
@@ -147,10 +169,6 @@ main {
   border: 1px solid var(--tile-border);
   border-radius: 16px;
   padding: 12px 16px 8px;
-}
-
-.chart-tile .zone-bar {
-  margin-top: 6px;
 }
 
 .chart-range {
@@ -206,10 +224,6 @@ main {
 
 .btn.ghost {
   background: transparent;
-}
-
-.btn.full {
-  grid-column: 1 / -1;
 }
 
 dialog {

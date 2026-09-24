@@ -167,7 +167,6 @@ async function connectSensor() {
 
     setStatus('Connected to ' + (device.name || 'sensor'), 'connected');
     connectBtn.textContent = 'Disconnect';
-    startBtn.disabled = false;
   } catch (err) {
     if (err.name === 'NotFoundError') {
       setStatus('No device selected.', 'error');
