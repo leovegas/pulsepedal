@@ -128,6 +128,10 @@ main {
   gap: 12px;
 }
 
+.grid .full {
+  grid-column: 1 / -1;
+}
+
 .charts {
   display: flex;
   flex-direction: column;
@@ -194,6 +198,10 @@ main {
 
 .btn.ghost {
   background: transparent;
+}
+
+.btn.full {
+  grid-column: 1 / -1;
 }
 
 dialog {

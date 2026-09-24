@@ -86,11 +86,13 @@ const hrTileEl = document.getElementById('hrTile');
 const hrZoneEl = document.getElementById('hrZone');
 const speedValueEl = document.getElementById('speedValue');
 const distValueEl = document.getElementById('distValue');
+const straightDistValueEl = document.getElementById('straightDistValue');
 const calValueEl = document.getElementById('calValue');
 const timeValueEl = document.getElementById('timeValue');
 const statusEl = document.getElementById('status');
 const connectBtn = document.getElementById('connectBtn');
 const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
 const stopBtn = document.getElementById('stopBtn');
 const resetBtn = document.getElementById('resetBtn');
 const hrChartEl = document.getElementById('hrChart');
@@ -265,7 +267,7 @@ let lastAlertTime = 0;
 const ALERT_REPEAT_MS = 8000;
 
 function checkHrAlert(hr) {
-  if (!running || !profile || !profile.hrAlertsEnabled || hr == null) {
+  if (!running || paused || !profile || !profile.hrAlertsEnabled || hr == null) {
     lastAlertKind = null;
     return;
   }
@@ -291,7 +293,9 @@ function checkHrAlert(hr) {
 
 let watchId = null;
 let lastPos = null;
+let startPos = null;
 let distanceKm = 0;
+let straightLineKm = 0;
 let currentSpeedKmh = 0;
 
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -330,8 +334,12 @@ function startGps() {
       }
       lastPos = { lat: latitude, lon: longitude, timestamp: pos.timestamp };
 
+      if (!startPos) startPos = { lat: latitude, lon: longitude };
+      straightLineKm = haversineKm(startPos.lat, startPos.lon, latitude, longitude);
+
       speedValueEl.textContent = currentSpeedKmh.toFixed(1);
       distValueEl.textContent = distanceKm.toFixed(2);
+      straightDistValueEl.textContent = straightLineKm.toFixed(2);
     },
     (err) => setStatus('GPS error: ' + err.message, 'error'),
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
@@ -440,6 +448,7 @@ function resetCharts() {
 // ---------- Session: timer + calories ----------
 
 let running = false;
+let paused = false;
 let elapsedSec = 0;
 let calories = 0;
 let tickInterval = null;
@@ -495,27 +504,54 @@ startBtn.addEventListener('click', () => {
     return;
   }
   running = true;
+  paused = false;
   lastAlertKind = null;
   unlockAudio();
   rideHrSamples = [];
   rideSpeedSamples = [];
   zoneSeconds = {};
+  startPos = null;
+  straightLineKm = 0;
+  straightDistValueEl.textContent = '0.00';
   startGps();
   requestWakeLock();
   tickInterval = setInterval(tick, 1000);
   startBtn.disabled = true;
+  pauseBtn.disabled = false;
+  pauseBtn.textContent = 'Pause';
   stopBtn.disabled = false;
   resetBtn.disabled = true;
   setStatus('Ride in progress', 'connected');
 });
 
+pauseBtn.addEventListener('click', () => {
+  if (!running) return;
+  paused = !paused;
+  lastAlertKind = null;
+  if (paused) {
+    stopGps();
+    clearInterval(tickInterval);
+    tickInterval = null;
+    pauseBtn.textContent = 'Resume';
+    setStatus('Ride paused');
+  } else {
+    startGps();
+    tickInterval = setInterval(tick, 1000);
+    pauseBtn.textContent = 'Pause';
+    setStatus('Ride in progress', 'connected');
+  }
+});
+
 stopBtn.addEventListener('click', () => {
   running = false;
+  paused = false;
   lastAlertKind = null;
   stopGps();
   releaseWakeLock();
   clearInterval(tickInterval);
   startBtn.disabled = false;
+  pauseBtn.disabled = true;
+  pauseBtn.textContent = 'Pause';
   stopBtn.disabled = true;
   resetBtn.disabled = false;
 
@@ -534,10 +570,13 @@ resetBtn.addEventListener('click', () => {
   calories = 0;
   distanceKm = 0;
   currentSpeedKmh = 0;
+  startPos = null;
+  straightLineKm = 0;
   timeValueEl.textContent = '00:00';
   calValueEl.textContent = '0';
   distValueEl.textContent = '0.00';
   speedValueEl.textContent = '0.0';
+  straightDistValueEl.textContent = '0.00';
   resetCharts();
 });
 

@@ -41,6 +41,10 @@
         <div class="tile-label">Time</div>
         <div class="tile-value"><span id="timeValue">00:00</span></div>
       </div>
+      <div class="tile full">
+        <div class="tile-label">Straight-Line Distance</div>
+        <div class="tile-value"><span id="straightDistValue">0.00</span><span class="unit">km</span></div>
+      </div>
     </section>
 
     <section class="charts">
@@ -59,8 +63,9 @@
     <div class="controls">
       <button id="connectBtn" class="btn primary">Connect Sensor</button>
       <button id="startBtn" class="btn" disabled>Start Ride</button>
+      <button id="pauseBtn" class="btn" disabled>Pause</button>
       <button id="stopBtn" class="btn" disabled>Stop</button>
-      <button id="resetBtn" class="btn ghost">Reset</button>
+      <button id="resetBtn" class="btn ghost full">Reset</button>
     </div>
   </main>
 
