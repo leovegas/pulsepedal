@@ -1,4 +1,4 @@
-const CACHE = 'pulsepedal-v1';
+const CACHE = 'pulsepedal-v2';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.json'];
 
 self.addEventListener('install', (event) => {

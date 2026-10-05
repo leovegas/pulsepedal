@@ -51,6 +51,11 @@
         <div class="tile-label">Elevation Gain</div>
         <div class="tile-value"><span id="elevGainValue">0</span><span class="unit">m</span></div>
       </div>
+      <div class="tile hidden" id="inclineTile">
+        <div class="tile-label">Incline</div>
+        <div class="tile-value"><span id="inclineValue">0.0</span><span class="unit">°</span></div>
+        <div class="tile-sub"><span id="gradeValue">0</span>% grade</div>
+      </div>
     </section>
 
     <section class="charts">
@@ -109,10 +114,34 @@
         <button type="button" class="btn ghost" id="testAlertBtn">Test sound</button>
       </div>
 
+      <hr class="divider">
+
+      <button type="button" class="btn ghost" id="calibBtn">Calibrate incline sensor</button>
+      <p class="hint" id="calibStatus"></p>
+
       <div class="dialog-actions">
         <button type="submit" class="btn primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="calibDialog">
+    <div class="calib-content">
+      <h2>Calibrate Incline</h2>
+      <p class="hint">Mount the phone on the bike the way you ride, then follow the two steps. Hold the bike still at each step.</p>
+      <div class="calib-step">
+        <div><strong>1. Level</strong><div class="hint">Bike upright on flat ground.</div></div>
+        <button type="button" class="btn" id="calibLevelBtn">Capture</button>
+      </div>
+      <div class="calib-step">
+        <div><strong>2. Front up</strong><div class="hint">Lift the front wheel (or roll it onto a curb), at least ~5°.</div></div>
+        <button type="button" class="btn" id="calibNoseBtn" disabled>Capture</button>
+      </div>
+      <div class="hint calib-live" id="calibLive"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="calibCloseBtn">Close</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="summaryDialog" class="summary-dialog">

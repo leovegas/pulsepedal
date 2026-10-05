@@ -89,6 +89,9 @@ const distValueEl = document.getElementById('distValue');
 const straightDistValueEl = document.getElementById('straightDistValue');
 const elevGainTileEl = document.getElementById('elevGainTile');
 const elevGainValueEl = document.getElementById('elevGainValue');
+const inclineTileEl = document.getElementById('inclineTile');
+const inclineValueEl = document.getElementById('inclineValue');
+const gradeValueEl = document.getElementById('gradeValue');
 const calValueEl = document.getElementById('calValue');
 const timeValueEl = document.getElementById('timeValue');
 const statusEl = document.getElementById('status');
@@ -379,6 +382,201 @@ function stopGps() {
   speedValueEl.textContent = '0.0';
 }
 
+// ---------- Incline (phone tilt) ----------
+// Gravity direction in the phone frame gives bike pitch. Calibration stores the
+// "level" gravity vector g0 and the in-plane forward axis f (learned by lifting the front wheel).
+
+const INCLINE_KEY = 'pulsepedal.incline';
+const MIN_CALIB_TILT_DEG = 3;
+const CALIB_SAMPLE_MS = 1500;
+const GRAVITY_MS2 = 9.81;
+const MAX_ACCEL_DEVIATION = 0.15; // fraction of g; beyond this the reading is dominated by bumps/braking
+const GRAVITY_ALPHA = 0.08;
+
+const vDot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const vSub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const vScale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const vNorm = (a) => {
+  const n = Math.hypot(a[0], a[1], a[2]);
+  return n > 0 ? vScale(a, 1 / n) : null;
+};
+
+function loadIncline() {
+  try {
+    const c = JSON.parse(localStorage.getItem(INCLINE_KEY));
+    return c && c.g0 && c.f ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+let inclineCalib = loadIncline();
+let motionActive = false;
+let gFilt = null; // low-pass filtered raw acceleration (m/s^2)
+let calibSamples = null; // when array, motion events push unit gravity vectors into it
+let inclineDeg = null;
+let maxInclineDeg = 0;
+let climbGradeSum = 0;
+let climbTicks = 0;
+let calibLevelG = null;
+let hadIncline = false;
+
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null) return;
+  const raw = [a.x, a.y, a.z];
+  gFilt = gFilt ? gFilt.map((v, i) => v + GRAVITY_ALPHA * (raw[i] - v)) : raw;
+  const u = vNorm(gFilt);
+  if (!u) return;
+  if (calibSamples) calibSamples.push(u);
+
+  if (!inclineCalib) return;
+  const mag = Math.hypot(raw[0], raw[1], raw[2]);
+  if (Math.abs(mag / GRAVITY_MS2 - 1) > MAX_ACCEL_DEVIATION) return; // hold last value
+  const pitch = Math.atan2(vDot(u, inclineCalib.f), vDot(u, inclineCalib.g0)) * 180 / Math.PI;
+  inclineDeg = pitch;
+  renderIncline();
+}
+
+function renderIncline() {
+  if (inclineDeg == null || !inclineCalib) {
+    inclineTileEl.classList.add('hidden');
+    return;
+  }
+  const deg = Math.round(inclineDeg * 2) / 2;
+  inclineValueEl.textContent = (deg > 0 ? '+' : '') + deg.toFixed(1);
+  gradeValueEl.textContent = Math.round(Math.tan(inclineDeg * Math.PI / 180) * 100);
+  inclineTileEl.classList.remove('hidden');
+}
+
+async function startMotion() {
+  if (motionActive || typeof DeviceMotionEvent === 'undefined') return false;
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      if ((await DeviceMotionEvent.requestPermission()) !== 'granted') return false;
+    } catch {
+      return false;
+    }
+  }
+  window.addEventListener('devicemotion', onMotion);
+  motionActive = true;
+  return true;
+}
+
+function stopMotion() {
+  window.removeEventListener('devicemotion', onMotion);
+  motionActive = false;
+  gFilt = null;
+}
+
+function resetInclineStats() {
+  inclineDeg = null;
+  maxInclineDeg = 0;
+  climbGradeSum = 0;
+  climbTicks = 0;
+  hadIncline = false;
+  inclineTileEl.classList.add('hidden');
+}
+
+function sampleInclineStats() {
+  if (inclineDeg == null) return;
+  hadIncline = true;
+  if (inclineDeg > maxInclineDeg) maxInclineDeg = inclineDeg;
+  if (inclineDeg > 1) {
+    climbGradeSum += Math.tan(inclineDeg * Math.PI / 180) * 100;
+    climbTicks += 1;
+  }
+}
+
+// ----- calibration dialog -----
+
+const calibDialog = document.getElementById('calibDialog');
+const calibBtn = document.getElementById('calibBtn');
+const calibStatusEl = document.getElementById('calibStatus');
+const calibLevelBtn = document.getElementById('calibLevelBtn');
+const calibNoseBtn = document.getElementById('calibNoseBtn');
+const calibLiveEl = document.getElementById('calibLive');
+const calibCloseBtn = document.getElementById('calibCloseBtn');
+
+function updateCalibStatus() {
+  calibStatusEl.textContent = inclineCalib ? 'Calibrated.' : 'Not calibrated - incline tile is hidden.';
+}
+
+function captureGravity() {
+  return new Promise((resolve) => {
+    calibSamples = [];
+    setTimeout(() => {
+      const s = calibSamples;
+      calibSamples = null;
+      if (!s || s.length < 5) return resolve(null);
+      const sum = s.reduce((acc, u) => [acc[0] + u[0], acc[1] + u[1], acc[2] + u[2]], [0, 0, 0]);
+      resolve(vNorm(sum));
+    }, CALIB_SAMPLE_MS);
+  });
+}
+
+calibBtn.addEventListener('click', async () => {
+  settingsDialog.close();
+  calibLevelG = null;
+  calibNoseBtn.disabled = true;
+  calibLiveEl.textContent = '';
+  calibDialog.showModal();
+  if (!(await startMotion()) && !motionActive) {
+    calibLiveEl.textContent = 'Motion sensor unavailable or permission denied (needs HTTPS).';
+    calibLevelBtn.disabled = true;
+  } else {
+    calibLevelBtn.disabled = false;
+  }
+});
+
+calibLevelBtn.addEventListener('click', async () => {
+  calibLevelBtn.disabled = true;
+  calibLiveEl.textContent = 'Hold still...';
+  const g = await captureGravity();
+  calibLevelBtn.disabled = false;
+  if (!g) {
+    calibLiveEl.textContent = 'No sensor data received.';
+    return;
+  }
+  calibLevelG = g;
+  calibNoseBtn.disabled = false;
+  calibLiveEl.textContent = 'Level captured. Now lift the front wheel and capture step 2.';
+});
+
+calibNoseBtn.addEventListener('click', async () => {
+  calibNoseBtn.disabled = true;
+  calibLiveEl.textContent = 'Hold still...';
+  const g1 = await captureGravity();
+  calibNoseBtn.disabled = false;
+  if (!g1) {
+    calibLiveEl.textContent = 'No sensor data received.';
+    return;
+  }
+  const tiltDeg = Math.acos(Math.min(1, Math.max(-1, vDot(calibLevelG, g1)))) * 180 / Math.PI;
+  if (tiltDeg < MIN_CALIB_TILT_DEG) {
+    calibLiveEl.textContent = `Only ${tiltDeg.toFixed(1)}° tilt - lift the front wheel higher and retry.`;
+    return;
+  }
+  // Nose-up moves gravity from g0 toward g1; forward axis = that motion made perpendicular to g0.
+  const d = vSub(g1, calibLevelG);
+  const f = vNorm(vSub(d, vScale(calibLevelG, vDot(d, calibLevelG))));
+  inclineCalib = { g0: calibLevelG, f };
+  try {
+    localStorage.setItem(INCLINE_KEY, JSON.stringify(inclineCalib));
+  } catch {}
+  calibLiveEl.textContent = `Calibrated (${tiltDeg.toFixed(0)}° reference). Lower the front wheel: reading should be ~0°.`;
+  updateCalibStatus();
+});
+
+calibCloseBtn.addEventListener('click', () => calibDialog.close());
+calibDialog.addEventListener('close', () => {
+  calibSamples = null;
+  if (!(running && !paused)) stopMotion();
+  settingsDialog.showModal();
+  updateCalibStatus();
+});
+updateCalibStatus();
+
 // ---------- Keep screen awake while riding ----------
 
 let wakeLock = null;
@@ -530,6 +728,7 @@ function tick() {
   if (speedHistory.length > MAX_CHART_POINTS) speedHistory.shift();
   drawCharts();
 
+  sampleInclineStats();
   rideHrSamples.push(currentHr);
   rideSpeedSamples.push(currentSpeedKmh);
   const zone = hrZoneInfo(currentHr);
@@ -571,6 +770,8 @@ startBtn.addEventListener('click', () => {
   elevGainTileEl.classList.add('hidden');
   renderZoneBar({}, liveZoneBarEl, liveZoneLegendEl);
   startGps();
+  resetInclineStats();
+  if (inclineCalib) startMotion();
   requestWakeLock();
   tickInterval = setInterval(tick, 1000);
   startBtn.disabled = true;
@@ -589,12 +790,14 @@ pauseBtn.addEventListener('click', () => {
   lowSpeedTicks = 0;
   if (paused) {
     stopGps();
+    stopMotion();
     clearInterval(tickInterval);
     tickInterval = null;
     pauseBtn.textContent = 'Resume';
     setStatus('Ride paused');
   } else {
     startGps();
+    if (inclineCalib) startMotion();
     tickInterval = setInterval(tick, 1000);
     pauseBtn.textContent = 'Pause';
     setStatus('Ride in progress', 'connected');
@@ -609,6 +812,7 @@ stopBtn.addEventListener('click', () => {
   lastAlertKind = null;
   document.body.classList.remove('riding');
   stopGps();
+  stopMotion();
   releaseWakeLock();
   clearInterval(tickInterval);
   startBtn.disabled = false;
@@ -643,6 +847,7 @@ resetBtn.addEventListener('click', () => {
   speedValueEl.textContent = '0.0';
   straightDistValueEl.textContent = '0.00';
   elevGainTileEl.classList.add('hidden');
+  resetInclineStats();
   renderZoneBar({}, liveZoneBarEl, liveZoneLegendEl);
   resetCharts();
 });
@@ -697,6 +902,8 @@ function buildRideSummary() {
     minHr,
     zoneSeconds,
     elevationGainM: hasAltitudeData ? Math.round(elevationGainM) : null,
+    maxInclineDeg: inclineCalib && hadIncline ? Math.round(maxInclineDeg * 10) / 10 : null,
+    avgClimbGradePct: inclineCalib && climbTicks ? Math.round(climbGradeSum / climbTicks * 10) / 10 : null,
     hrSamples: downsample(rideHrSamples, SUMMARY_SAMPLE_POINTS),
   };
 }
@@ -782,6 +989,8 @@ function renderRideSummary(ride) {
     statHtml('Max HR', ride.maxHr != null ? ride.maxHr : '--', 'bpm'),
     statHtml('Min HR', ride.minHr != null ? ride.minHr : '--', 'bpm'),
     ...(ride.elevationGainM != null ? [statHtml('Elevation Gain', ride.elevationGainM, 'm')] : []),
+    ...(ride.maxInclineDeg != null ? [statHtml('Max Incline', ride.maxInclineDeg.toFixed(1), '°')] : []),
+    ...(ride.avgClimbGradePct != null ? [statHtml('Avg Climb Grade', ride.avgClimbGradePct.toFixed(1), '%')] : []),
   ].join('');
 
   renderZoneBar(ride.zoneSeconds, summaryZoneBarEl, summaryZoneLegendEl);

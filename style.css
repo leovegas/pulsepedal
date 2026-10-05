@@ -538,3 +538,26 @@ dialog.history-dialog {
   font-size: 16px;
   padding: 4px;
 }
+
+.tile-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.calib-content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.calib-content h2 { margin: 0; font-size: 18px; }
+.calib-content .hint { margin: 0; }
+
+.calib-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
