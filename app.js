@@ -404,7 +404,7 @@ const vNorm = (a) => {
 function loadIncline() {
   try {
     const c = JSON.parse(localStorage.getItem(INCLINE_KEY));
-    return c && c.g0 && c.f ? c : null;
+    return c && c.g0 && c.f && c.src ? c : null;
   } catch {
     return null;
   }
@@ -421,20 +421,37 @@ let climbTicks = 0;
 let calibLevelG = null;
 let hadIncline = false;
 
+let motionSrc = null; // 'motion' (accelerometer) or 'orient' (fused deviceorientation fallback)
+let gotMotionEvent = false;
+const SRC_DETECT_MS = 1000;
+
 function onMotion(e) {
   const a = e.accelerationIncludingGravity;
   if (!a || a.x == null) return;
+  gotMotionEvent = true;
+  if (motionSrc !== 'motion') return;
   const raw = [a.x, a.y, a.z];
   gFilt = gFilt ? gFilt.map((v, i) => v + GRAVITY_ALPHA * (raw[i] - v)) : raw;
-  const u = vNorm(gFilt);
+  handleGravity(vNorm(gFilt), Math.hypot(raw[0], raw[1], raw[2]) / GRAVITY_MS2);
+}
+
+function onOrientation(e) {
+  if (motionSrc !== 'orient' || e.beta == null || e.gamma == null) return;
+  const b = e.beta * Math.PI / 180;
+  const g = e.gamma * Math.PI / 180;
+  // Same "up reaction" convention as Android's accelerationIncludingGravity at rest.
+  const raw = [-Math.cos(b) * Math.sin(g), Math.sin(b), Math.cos(b) * Math.cos(g)];
+  gFilt = gFilt ? gFilt.map((v, i) => v + GRAVITY_ALPHA * (raw[i] - v)) : raw;
+  handleGravity(vNorm(gFilt), null);
+}
+
+function handleGravity(u, gMag) {
   if (!u) return;
   if (calibSamples) calibSamples.push(u);
 
-  if (!inclineCalib) return;
-  const mag = Math.hypot(raw[0], raw[1], raw[2]);
-  if (Math.abs(mag / GRAVITY_MS2 - 1) > MAX_ACCEL_DEVIATION) return; // hold last value
-  const pitch = Math.atan2(vDot(u, inclineCalib.f), vDot(u, inclineCalib.g0)) * 180 / Math.PI;
-  inclineDeg = pitch;
+  if (!inclineCalib || inclineCalib.src !== motionSrc) return;
+  if (gMag != null && Math.abs(gMag - 1) > MAX_ACCEL_DEVIATION) return; // hold last value
+  inclineDeg = Math.atan2(vDot(u, inclineCalib.f), vDot(u, inclineCalib.g0)) * 180 / Math.PI;
   renderIncline();
 }
 
@@ -450,22 +467,42 @@ function renderIncline() {
 }
 
 async function startMotion() {
-  if (motionActive || typeof DeviceMotionEvent === 'undefined') return false;
-  if (typeof DeviceMotionEvent.requestPermission === 'function') {
-    try {
-      if ((await DeviceMotionEvent.requestPermission()) !== 'granted') return false;
-    } catch {
-      return false;
+  if (motionActive) return true;
+  const hasMotion = typeof DeviceMotionEvent !== 'undefined';
+  const hasOrient = typeof DeviceOrientationEvent !== 'undefined';
+  if (!hasMotion && !hasOrient) return false;
+  // iOS gates each sensor behind its own permission; start both prompts inside the tap gesture.
+  const ask = (Ev) => (typeof Ev !== 'undefined' && typeof Ev.requestPermission === 'function')
+    ? Ev.requestPermission().catch(() => 'denied')
+    : Promise.resolve('granted');
+  const [pm, po] = await Promise.all([ask(hasMotion ? DeviceMotionEvent : undefined),
+    ask(hasOrient ? DeviceOrientationEvent : undefined)]);
+  const motionOk = hasMotion && pm === 'granted';
+  const orientOk = hasOrient && po === 'granted';
+  if (!motionOk && !orientOk) return false;
+
+  gotMotionEvent = false;
+  if (motionOk) window.addEventListener('devicemotion', onMotion);
+  if (orientOk) window.addEventListener('deviceorientation', onOrientation);
+  motionActive = true;
+
+  if (inclineCalib) {
+    motionSrc = inclineCalib.src; // must match the source the calibration was captured with
+  } else {
+    // Calibrating: prefer the accelerometer, fall back to deviceorientation if it never fires.
+    motionSrc = motionOk ? 'motion' : 'orient';
+    if (motionOk && orientOk) {
+      setTimeout(() => { if (!gotMotionEvent) motionSrc = 'orient'; }, SRC_DETECT_MS);
     }
   }
-  window.addEventListener('devicemotion', onMotion);
-  motionActive = true;
   return true;
 }
 
 function stopMotion() {
   window.removeEventListener('devicemotion', onMotion);
+  window.removeEventListener('deviceorientation', onOrientation);
   motionActive = false;
+  motionSrc = null;
   gFilt = null;
 }
 
@@ -496,6 +533,7 @@ const calibStatusEl = document.getElementById('calibStatus');
 const calibLevelBtn = document.getElementById('calibLevelBtn');
 const calibNoseBtn = document.getElementById('calibNoseBtn');
 const calibLiveEl = document.getElementById('calibLive');
+let prevCalib = null; // restored if the dialog is closed without finishing
 const calibCloseBtn = document.getElementById('calibCloseBtn');
 
 function updateCalibStatus() {
@@ -518,6 +556,11 @@ function captureGravity() {
 calibBtn.addEventListener('click', async () => {
   settingsDialog.close();
   calibLevelG = null;
+  prevCalib = inclineCalib;
+  inclineCalib = null; // recalibrating from scratch so the sensor source is re-detected
+  inclineDeg = null;
+  renderIncline();
+  stopMotion();
   calibNoseBtn.disabled = true;
   calibLiveEl.textContent = '';
   calibDialog.showModal();
@@ -560,7 +603,7 @@ calibNoseBtn.addEventListener('click', async () => {
   // Nose-up moves gravity from g0 toward g1; forward axis = that motion made perpendicular to g0.
   const d = vSub(g1, calibLevelG);
   const f = vNorm(vSub(d, vScale(calibLevelG, vDot(d, calibLevelG))));
-  inclineCalib = { g0: calibLevelG, f };
+  inclineCalib = { g0: calibLevelG, f, src: motionSrc };
   try {
     localStorage.setItem(INCLINE_KEY, JSON.stringify(inclineCalib));
   } catch {}
@@ -571,7 +614,10 @@ calibNoseBtn.addEventListener('click', async () => {
 calibCloseBtn.addEventListener('click', () => calibDialog.close());
 calibDialog.addEventListener('close', () => {
   calibSamples = null;
-  if (!(running && !paused)) stopMotion();
+  if (!inclineCalib) inclineCalib = prevCalib;
+  prevCalib = null;
+  stopMotion();
+  if (running && !paused && inclineCalib) startMotion();
   settingsDialog.showModal();
   updateCalibStatus();
 });
