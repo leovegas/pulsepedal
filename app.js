@@ -421,6 +421,10 @@ let climbTicks = 0;
 let calibLevelG = null;
 let hadIncline = false;
 
+const INCLINE_SMOOTH_MS = 1500; // time constant of the displayed incline
+const INCLINE_RENDER_MS = 500; // how often the tile text refreshes
+let lastInclineT = 0;
+let lastInclineRender = 0;
 let motionSrc = null; // 'motion' (accelerometer) or 'orient' (fused deviceorientation fallback)
 let gotMotionEvent = false;
 const SRC_DETECT_MS = 1000;
@@ -451,8 +455,19 @@ function handleGravity(u, gMag) {
 
   if (!inclineCalib || inclineCalib.src !== motionSrc) return;
   if (gMag != null && Math.abs(gMag - 1) > MAX_ACCEL_DEVIATION) return; // hold last value
-  inclineDeg = Math.atan2(vDot(u, inclineCalib.f), vDot(u, inclineCalib.g0)) * 180 / Math.PI;
-  renderIncline();
+  const deg = Math.atan2(vDot(u, inclineCalib.f), vDot(u, inclineCalib.g0)) * 180 / Math.PI;
+  const now = performance.now();
+  if (inclineDeg == null) {
+    inclineDeg = deg;
+  } else {
+    // time-based EMA so smoothing doesn't depend on the sensor's event rate
+    inclineDeg += (1 - Math.exp(-(now - lastInclineT) / INCLINE_SMOOTH_MS)) * (deg - inclineDeg);
+  }
+  lastInclineT = now;
+  if (now - lastInclineRender >= INCLINE_RENDER_MS) {
+    lastInclineRender = now;
+    renderIncline();
+  }
 }
 
 function renderIncline() {
